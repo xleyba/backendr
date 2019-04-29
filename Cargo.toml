@@ -1,0 +1,17 @@
+[package]
+name = "backendr"
+version = "0.1.0"
+authors = ["xleyba <xleyba@users.noreply.github.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+actix-web = { version="1.0.0-beta.2" }
+serde = "1.0.90"
+serde_derive = "1.0.90"
+colored = "1.7"
+rug = "1.3.0"
+envy = "0.4.0"
+log = "0.4.6"
+env_logger = "0.6.1"
+rusqlite = "0.18.0"
