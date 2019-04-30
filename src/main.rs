@@ -1,23 +1,31 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
+extern crate r2d2;
+extern crate r2d2_sqlite;
 
-use actix_web::{App, web, HttpServer};
+use actix_web::{App, guard, HttpResponse, web, HttpServer};
+
+use r2d2_sqlite::SqliteConnectionManager;
 
 use colored::*;
 use log::{debug};
 use log::Level;
 
 mod handlers;
+use crate::handlers::Parameters;
 use crate::handlers::index;
 use crate::handlers::echo_handler;
-use crate::handlers::factorial_iter_handler;
-use crate::handlers::factorial_recur_handler;
+use crate::handlers::customer_accounts_handler;
+
 
 // Defines the default port
 const DEFAULT_PORT: u16          = 9596;
 
 // Defines the workers used by server
 const DEFAULT_WORKERS: usize     = 2;
+
+// Defines the DB Path 
+const DEFAULT_DB_PATH: &str      = "./DB/zerodb.db";
 
 // Config port
 #[derive(Deserialize, Debug)]
@@ -31,6 +39,12 @@ struct ConfigWorkers {
     workers: usize,
 }
 
+// Config DB Path
+#[derive(Deserialize, Debug)]
+struct ConfigDbPath {
+    db_path: String,
+}
+
 // Displays intro banner
 fn intro() {
     println!("{}", "===========================================================".yellow().bold());
@@ -39,7 +53,7 @@ fn intro() {
     println!("{}", "   Please use env variables for configuration:".yellow().bold());
     println!("{}", "       BE_PORT=port number".yellow().bold());
     println!("{}", "       BE_WORKERS=workers for server".yellow().bold());
-    println!("{}", "       BE_CLIENT_URL=url of called service".yellow().bold());
+    println!("{}", "       BE_DB_PATH=path/name of DB".yellow().bold());
     println!("{}", "-----------------------------------------------------------");
     println!("Starting configuration......\n");
 }
@@ -74,7 +88,30 @@ fn config_workers() -> usize {
    }
 }
 
+// Configure workers through env variables
+fn config_db_path() -> String {
+    match envy::prefixed("BE_").from_env::<ConfigDbPath>() {
+      Ok(config) => {
+          info!("DB Path set to: {}", config.db_path);
+          config.db_path
+      },
+      Err(error) => {
+          error!("Error with env var DB_PATH {}", error);
+          info!("Workers set to {} - default value", DEFAULT_DB_PATH);
+          DEFAULT_DB_PATH.to_string()
+      }
+   }
+}
 
+
+// ------------------------------------------
+	// /customer/accounts					- 
+	// /customer/account					- 
+	// /customer/account/detail				- 
+	// /customer/account/movements			- 
+	// /customer/account/movements/top		- 
+	// /customer/account/movements/balance	- 
+	// ------------------------------------------
 
 fn main()  -> std::io::Result<()> {
 
@@ -87,6 +124,18 @@ fn main()  -> std::io::Result<()> {
 
     let port = config_port();
     let workers = config_workers();
+    let db_path = config_db_path();
+
+    /*let con = Connection::open(db_path);
+    let c = match con {
+        Ok(c) => c,
+        Err(error) => {
+            panic!("Error connecting to db {}", error)
+        },
+    };*/
+
+    let manager = SqliteConnectionManager::file(db_path);
+    let pool = r2d2::Pool::new(manager).unwrap();   
 
     println!("{}", "-----------------------------------------------------------");
     println!("Starting server.... Press Ctrl-C to stop it.");
@@ -95,23 +144,40 @@ fn main()  -> std::io::Result<()> {
         debug!("Starting server");
     }
 
-    HttpServer::new(|| {App::new()
+    HttpServer::new(
+        move || {
+            App::new()
+        .data(Parameters{
+            con: pool.clone(), 
+        })
         .service(
             web::resource("/")
                 .route(web::get().to(index))
         ) // end service
         .service(
-            web::resource("/echo/{message}")
-            .route(web::get().to_async(echo_handler))
+            web::resource("/hello")
+            .route(web::get().to(echo_handler))
         ) // end hello service
         .service(
-            web::resource("factorialIterative/{number}")
-            .route(web::get().to_async(factorial_iter_handler))
-        ) // end iter service
-        .service(
-            web::resource("factorialRecursive/{number}")
-            .route(web::get().to_async(factorial_recur_handler))
-        ) // end recur service
+            web::resource("/customer/accounts")
+            .route(web::get().to(customer_accounts_handler))
+        ) // end customer accounts
+        .default_service(
+                // 404 for GET request
+                web::resource("")
+                    .route(web::get()
+                      //.to(p404)
+                      .to(|| {
+                          println!("Response for wrong url");
+                          HttpResponse::NotFound()
+                      }))
+                    // all requests that are not `GET`
+                    .route(
+                        web::route()
+                            .guard(guard::Not(guard::Get()))
+                            .to(|| HttpResponse::MethodNotAllowed()),
+                    ),
+            )
     })
     .workers(workers)
     .bind(format!("127.0.0.1:{}", port))?
