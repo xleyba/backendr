@@ -1,8 +1,13 @@
-#[derive(Debug)]
+#[derive(Serialize,Debug)]
 pub struct CustomerAccount {
     pub id: i32,
     pub name: String,
     pub user_name: String,
+}
+
+#[derive(Serialize,Debug)]
+pub struct CustomerAccounts {
+    pub customer_acount_list: Vec<CustomerAccount>,
 }
 
 pub struct CustomerAccountDetails {
