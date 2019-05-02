@@ -10,6 +10,7 @@ pub struct CustomerAccounts {
     pub customer_acount_list: Vec<CustomerAccount>,
 }
 
+#[derive(Deserialize,Serialize,Debug)]
 pub struct CustomerAccountDetails {
     pub id: i32,
     pub name: String,

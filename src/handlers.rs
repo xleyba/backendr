@@ -7,10 +7,12 @@ use uuid::Uuid;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{NO_PARAMS};
+use serde_rusqlite::from_row;
 
 mod models;
 use crate::handlers::models::CustomerAccount;
 use crate::handlers::models::CustomerAccounts;
+use crate::handlers::models::CustomerAccountDetails;
 
 #[derive(Deserialize)]
 pub struct Parameters {
@@ -96,53 +98,39 @@ pub fn customer_account_handler(msg: Query<Parameters>,
     })
 }
 
-/*
-// Return data of requested account.
-// Receives accountId.
-func customerAccountHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+/// Return data of requested account.
+/// Receives accountId.
+pub fn customer_account_detail_handler(msg: Query<Parameters>, 
+    db: web::Data<Pool<SqliteConnectionManager>>,) 
+-> impl Future<Item = HttpResponse, Error = Error> {
 
-		if len(r.FormValue("accountId")) == 0 {
-			http.Error(w, "Parameter accountId not present", http.StatusBadRequest)
-			log.Error().Msg("Parameter accountId not present")
-			return
-		}
+    // Get parameter accountId
+    let account_id = msg.accountId.clone(); 
 
-		rows, err := db.Query("select * from customer_account where id = " + r.FormValue("accountId"))
-		if err != nil {
-			http.Error(w, "Error from DB", http.StatusBadRequest)
-			log.Error().Msgf("Error from DB %s", err.Error())
-			return
-		}
-		defer rows.Close()
+    // Prepare query statement
+    let mut query = String::from("SELECT a.ID as id, a.NAME as name, a.USERNAME as user_name, ");
+	query.push_str("count(m.id) as movements, SUM(m.AMOUNT) as total_amount ");
+	query.push_str("FROM CUSTOMER_ACCOUNT a, CUSTOMER_ACCOUNT_MOVEMENTS m ");
+	query.push_str("WHERE a.ID = ");
+    query.push_str(&account_id);
+	query.push_str(" AND a.ID = m.CUSTOMER_ACCOUNT_ID ");
+	query.push_str("GROUP BY a.ID, a.NAME, a.USERNAME");
 
-		var ca CustomerAccount
+    web::block(move || {
+        let conn = db.get().unwrap();                               // get connection
+        let mut stmt = conn.prepare(&query).unwrap();               // Set statement
 
-		for rows.Next() {
+        let ca = stmt.query_row(NO_PARAMS, |row| {
+            Ok(from_row::<CustomerAccountDetails>(&row).unwrap())   // Serialize result
+        }).unwrap();
 
-			err = rows.Scan(&ca.Id, &ca.Name, &ca.Username)
-			if err != nil {
-				log.Error().Msgf("Error: %s", err)
-			}
+        serde_json::to_string(&ca)                                  // return json as string
+    })
+    .then(|res| match res {
+        Ok(account_details) => {
+            Ok(HttpResponse::Ok().json(account_details))
+        },
+        Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
+    })       
 
-		}
-
-		err = rows.Err()
-		if err != nil {
-			http.Error(w, "Error from queries", http.StatusInternalServerError)
-			log.Error().Msgf("%s", err)
-			return
-		}
-
-		if err := json.NewEncoder(w).Encode(ca); err != nil {
-			log.Error().Msgf("%s", err.Error())
-			http.Error(w, "Error encoding JSON", http.StatusInternalServerError)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		log.Debug().Msgf("Returning: %v\n", ca)
-	}
-
-}*/
+}
