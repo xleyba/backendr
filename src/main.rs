@@ -15,6 +15,7 @@ mod handlers;
 use crate::handlers::index;
 use crate::handlers::echo_handler;
 use crate::handlers::customer_accounts_handler;
+use crate::handlers::customer_account_handler;
 
 
 // Defines the default port
@@ -146,7 +147,7 @@ fn main()  -> std::io::Result<()> {
     HttpServer::new(
         move || {
             App::new()
-        .data(pool.clone()) // <- store db pool in app state
+        .data(pool.clone(),) // <- store db pool in app state
         .service(
             web::resource("/")
                 .route(web::get().to(index))
@@ -158,6 +159,10 @@ fn main()  -> std::io::Result<()> {
         .service(
             web::resource("/customer/accounts")
             .route(web::get().to_async(customer_accounts_handler))
+        ) // end customer accounts
+        .service(
+            web::resource("/customer/account")
+            .route(web::get().to_async(customer_account_handler))
         ) // end customer accounts
         .default_service(
                 // 404 for GET request
