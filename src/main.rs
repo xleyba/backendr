@@ -12,7 +12,6 @@ use log::{debug};
 use log::Level;
 
 mod handlers;
-use crate::handlers::Parameters;
 use crate::handlers::index;
 use crate::handlers::echo_handler;
 use crate::handlers::customer_accounts_handler;
@@ -147,9 +146,7 @@ fn main()  -> std::io::Result<()> {
     HttpServer::new(
         move || {
             App::new()
-        .data(Parameters{
-            con: pool.clone(), 
-        })
+        .data(pool.clone()) // <- store db pool in app state
         .service(
             web::resource("/")
                 .route(web::get().to(index))
@@ -160,7 +157,7 @@ fn main()  -> std::io::Result<()> {
         ) // end hello service
         .service(
             web::resource("/customer/accounts")
-            .route(web::get().to(customer_accounts_handler))
+            .route(web::get().to_async(customer_accounts_handler))
         ) // end customer accounts
         .default_service(
                 // 404 for GET request
