@@ -1,5 +1,6 @@
 use actix_web::{Result, Error, web, HttpResponse};
 use actix_web::web::Query;
+use actix_http::{http, Response};
 use futures::Future;
 
 use uuid::Uuid;
@@ -14,11 +15,21 @@ mod models;
 use crate::handlers::models::CustomerAccount;
 use crate::handlers::models::CustomerAccounts;
 use crate::handlers::models::CustomerAccountDetails;
+use crate::handlers::models::CustomerAccountMovement;
+use crate::handlers::models::CustomerAccountMovements;
 
 #[derive(Deserialize)]
 pub struct Parameters {
     accountId: String,
 }
+
+#[derive(Deserialize)]
+pub struct SortedParameters {
+    accountId: String,
+    sort: usize,
+    asc: usize,
+}
+
 
 // Handle index route
 pub fn index() -> &'static str {
@@ -60,7 +71,11 @@ pub fn customer_accounts_handler(db: web::Data<Pool<SqliteConnectionManager>>,)
     })
     .then(|res| match res {
         Ok(accounts) => {
-            Ok(HttpResponse::Ok().json(accounts))
+            Ok(Response::Ok()
+                .set_header("X-TEST", "value")
+                .set_header(http::header::CONTENT_TYPE, "application/json")
+                .body(accounts)
+            )
         },
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })
@@ -88,7 +103,7 @@ pub fn customer_account_handler(msg: Query<Parameters>,
      })
      .then(|res| match res {
         Ok(account) => {
-            Ok(HttpResponse::Ok().json(account))
+            Ok(HttpResponse::Ok().body(account))
         },
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })
@@ -124,9 +139,57 @@ pub fn customer_account_detail_handler(msg: Query<Parameters>,
     })
     .then(|res| match res {
         Ok(account_details) => {
-            Ok(HttpResponse::Ok().json(account_details))
+            Ok(HttpResponse::Ok().body(account_details))
         },
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })       
+
+}
+
+/// Retrieves all the customer account movements
+/// Received parameters:
+///		accountId - number with the account
+/// 	sort	  - true or false or not present
+///		asc		  - true or false or not present
+/// Returns the list of movements sorted if requested
+pub fn customer_account_movements_handler(msg: Query<SortedParameters>, 
+    db: web::Data<Pool<SqliteConnectionManager>>,) 
+-> impl Future<Item = HttpResponse, Error = Error> {
+
+    // Get parameter accountId
+    let account_id = msg.accountId.clone(); 
+
+    // Prepare query statement
+    let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
+	query.push_str(" FROM CUSTOMER_ACCOUNT_MOVEMENTS m ");
+	query.push_str(" WHERE m.CUSTOMER_ACCOUNT_ID = ");
+    query.push_str(&account_id);
+
+    web::block(move || {
+        let conn = db.get().unwrap();                               // get connection
+        let mut stmt = conn.prepare(&query).unwrap();               // Set statement
+
+        let mut rows_iter = from_rows::<CustomerAccountMovement>(stmt.query(NO_PARAMS).unwrap());
+
+        let mut v: Vec<CustomerAccountMovement> = Vec::new();
+
+        loop {
+            match rows_iter.next() {
+                None => break,
+                Some(cam) => {
+                    debug!("CAM: {:?}", cam);
+                    v.push(cam);
+                },
+            };
+        }
+
+        serde_json::to_string(&CustomerAccountMovements{customer_acount_mmnt_list: v,})                                  // return json as string
+    })
+    .then(|res| match res {
+        Ok(account_details) => {
+            Ok(HttpResponse::Ok().body(account_details))
+        },
+        Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
+    })  
 
 }
