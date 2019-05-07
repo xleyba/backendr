@@ -1,9 +1,10 @@
 use actix_web::{Result, Error, web, HttpResponse};
 use actix_web::web::Query;
-use actix_http::{http, Response};
+use actix_http::http;
 use futures::Future;
 
 use uuid::Uuid;
+use std::cmp::Reverse;
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -53,9 +54,11 @@ pub fn customer_accounts_handler(db: web::Data<Pool<SqliteConnectionManager>>,)
         // username retrieved as user_name to match Rust snake case name.
         let mut statement = conn.prepare("select id, name, username as user_name from customer_account").unwrap();
         
-        let mut rows_iter = from_rows::<CustomerAccount>(statement.query(NO_PARAMS).unwrap());
+        let rows_iter = from_rows::<CustomerAccount>(statement.query(NO_PARAMS).unwrap());
 
-        let mut v: Vec<CustomerAccount> = Vec::new();
+        let v = rows_iter.collect::<Vec<CustomerAccount>>();
+        
+        /*let mut v: Vec<CustomerAccount> = Vec::new();
 
         loop {
             match rows_iter.next() {
@@ -65,13 +68,13 @@ pub fn customer_accounts_handler(db: web::Data<Pool<SqliteConnectionManager>>,)
                     v.push(ca);
                 },
             };
-        }
+        }*/
 
         serde_json::to_string(&CustomerAccounts{customer_acount_list: v,})
     })
     .then(|res| match res {
         Ok(accounts) => {
-            Ok(Response::Ok()
+            Ok(HttpResponse::Ok()
                 .set_header("X-TEST", "value")
                 .set_header(http::header::CONTENT_TYPE, "application/json")
                 .body(accounts)
@@ -169,9 +172,13 @@ pub fn customer_account_movements_handler(msg: Query<SortedParameters>,
         let conn = db.get().unwrap();                               // get connection
         let mut stmt = conn.prepare(&query).unwrap();               // Set statement
 
-        let mut rows_iter = from_rows::<CustomerAccountMovement>(stmt.query(NO_PARAMS).unwrap());
+        let rows_iter = from_rows::<CustomerAccountMovement>(stmt.query(NO_PARAMS).unwrap());
 
-        let mut v: Vec<CustomerAccountMovement> = Vec::new();
+        let mut v = rows_iter.collect::<Vec<CustomerAccountMovement>>();
+
+        // Below commented code do the same than above collect
+        // but performs slower.
+        /*let mut v: Vec<CustomerAccountMovement> = Vec::new();
 
         loop {
             match rows_iter.next() {
@@ -181,13 +188,26 @@ pub fn customer_account_movements_handler(msg: Query<SortedParameters>,
                     v.push(cam);
                 },
             };
-        }
+        }*/
+
+        // Get parameter sort
+        if msg.sort == 1 {
+            if msg.asc == 0 {
+                v.sort_by_key(|x| (x.id, Reverse(x.id))); 
+            } else {
+                v.sort_by_key(|x| x.id); 
+            }
+        } 
 
         serde_json::to_string(&CustomerAccountMovements{customer_acount_mmnt_list: v,})                                  // return json as string
     })
     .then(|res| match res {
-        Ok(account_details) => {
-            Ok(HttpResponse::Ok().body(account_details))
+        Ok(account_mvmt) => {
+            Ok(HttpResponse::Ok()
+                .set_header("X-TEST", "value")
+                .set_header(http::header::CONTENT_TYPE, "application/json")
+                .body(account_mvmt)
+            )
         },
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })  
