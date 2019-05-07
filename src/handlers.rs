@@ -31,6 +31,13 @@ pub struct SortedParameters {
     asc: usize,
 }
 
+#[derive(Deserialize)]
+pub struct TopSortedParameters {
+    accountId: String,
+    totalElements: usize,
+    asc: usize,
+}
+
 
 // Handle index route
 pub fn index() -> &'static str {
@@ -211,5 +218,65 @@ pub fn customer_account_movements_handler(msg: Query<SortedParameters>,
         },
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })  
+}
 
+// Retrieves all the customer account movements but will display just the top
+// requested after sort them if required.
+//		accountId 		- number with the account
+// 		totalElements	- number of rows to show
+//		asc		  		- true or false or not present
+// Returns the list of movements sorted if requested
+pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>, 
+    db: web::Data<Pool<SqliteConnectionManager>>,) 
+-> impl Future<Item = HttpResponse, Error = Error> {
+
+// Get parameter accountId
+    let account_id = msg.accountId.clone(); 
+
+    // Prepare query statement
+    let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
+	query.push_str(" FROM CUSTOMER_ACCOUNT_MOVEMENTS m ");
+	query.push_str(" WHERE m.CUSTOMER_ACCOUNT_ID = ");
+    query.push_str(&account_id);
+
+    web::block(move || {
+        let conn = db.get().unwrap();                               // get connection
+        let mut stmt = conn.prepare(&query).unwrap();               // Set statement
+
+        let mut rows_iter = from_rows::<CustomerAccountMovement>(stmt.query(NO_PARAMS).unwrap());
+
+        // let mut v = rows_iter.collect::<Vec<CustomerAccountMovement>>();
+
+        let mut v: Vec<CustomerAccountMovement> = Vec::new();
+
+        // 
+        for x in 0..msg.totalElements {
+            match rows_iter.next() {
+                None => break,
+                Some(cam) => {
+                    debug!("CAM: {:?}", cam);
+                    v.push(cam);
+                },
+            };
+        }
+
+        // Get parameter sort
+        if msg.asc == 0 {
+            v.sort_by_key(|x| (x.id, Reverse(x.id))); 
+        } else {
+            v.sort_by_key(|x| x.id); 
+        }
+
+        serde_json::to_string(&CustomerAccountMovements{customer_acount_mmnt_list: v,})                                  // return json as string
+    })
+    .then(|res| match res {
+        Ok(account_mvmt) => {
+            Ok(HttpResponse::Ok()
+                .set_header("X-TEST", "value")
+                .set_header(http::header::CONTENT_TYPE, "application/json")
+                .body(account_mvmt)
+            )
+        },
+        Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
+    })  
 }
