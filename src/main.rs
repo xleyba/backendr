@@ -1,5 +1,7 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
+extern crate validator_derive;
+extern crate validator;
 extern crate r2d2;
 extern crate r2d2_sqlite;
 

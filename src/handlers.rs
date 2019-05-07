@@ -23,23 +23,39 @@ use crate::handlers::models::CustomerAccountBalance;
 
 #[derive(Deserialize)]
 pub struct Parameters {
-    accountId: String,
+    #[serde(rename = "accountId")]
+    account_id: String,
 }
 
 #[derive(Deserialize)]
 pub struct SortedParameters {
-    accountId: String,
+    #[serde(rename = "accountId")]
+    account_id: String,
+    #[serde(default = "default_numeric")]
     sort: usize,
+    #[serde(default = "default_numeric")]
     asc: usize,
 }
 
 #[derive(Deserialize)]
 pub struct TopSortedParameters {
-    accountId: String,
-    totalElements: usize,
+    #[serde(rename = "accountId")]
+    account_id: String,
+    #[serde(rename = "totalElements", default = "default_elements")]
+    total_elements: usize,
+    #[serde(default = "default_numeric")]
     asc: usize,
 }
 
+// Will return default value for numeric parameters
+fn default_numeric() -> usize {
+    0
+}
+
+// Will return default value for total elements parameter
+fn default_elements() -> usize {
+    0
+}
 
 // Handle index route
 pub fn index() -> &'static str {
@@ -99,7 +115,7 @@ pub fn customer_account_handler(msg: Query<Parameters>,
     db: web::Data<Pool<SqliteConnectionManager>>,) 
 -> impl Future<Item = HttpResponse, Error = Error> {
 
-    let account_id = msg.accountId.clone();
+    let account_id = msg.account_id.clone();
 
      web::block(move || {
         let conn = db.get().unwrap();
@@ -128,7 +144,7 @@ pub fn customer_account_detail_handler(msg: Query<Parameters>,
 -> impl Future<Item = HttpResponse, Error = Error> {
 
     // Get parameter accountId
-    let account_id = msg.accountId.clone(); 
+    let account_id = msg.account_id.clone(); 
 
     // Prepare query statement
     let mut query = String::from("SELECT a.ID as id, a.NAME as name, a.USERNAME as user_name, ");
@@ -169,7 +185,7 @@ pub fn customer_account_movements_handler(msg: Query<SortedParameters>,
 -> impl Future<Item = HttpResponse, Error = Error> {
 
     // Get parameter accountId
-    let account_id = msg.accountId.clone(); 
+    let account_id = msg.account_id.clone(); 
 
     // Prepare query statement
     let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
@@ -233,7 +249,7 @@ pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>,
 -> impl Future<Item = HttpResponse, Error = Error> {
 
     // Get parameter accountId
-    let account_id = msg.accountId.clone(); 
+    let account_id = msg.account_id.clone(); 
 
     // Prepare query statement
     let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
@@ -252,7 +268,7 @@ pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>,
         let mut v: Vec<CustomerAccountMovement> = Vec::new();
 
         // 
-        for x in 0..msg.totalElements {
+        for _x in 0..msg.total_elements {
             match rows_iter.next() {
                 None => break,
                 Some(cam) => {
@@ -292,7 +308,7 @@ pub fn customer_account_movements_balance_handler(msg: Query<Parameters>,
 -> impl Future<Item = HttpResponse, Error = Error> {
 
     // Get parameter accountId
-    let account_id = msg.accountId.clone(); 
+    let account_id = msg.account_id.clone(); 
 
     // Prepare query statement
     let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
