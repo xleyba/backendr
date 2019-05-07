@@ -18,6 +18,8 @@ use crate::handlers::models::CustomerAccounts;
 use crate::handlers::models::CustomerAccountDetails;
 use crate::handlers::models::CustomerAccountMovement;
 use crate::handlers::models::CustomerAccountMovements;
+use crate::handlers::models::CustomerAccountBalance;
+
 
 #[derive(Deserialize)]
 pub struct Parameters {
@@ -200,7 +202,7 @@ pub fn customer_account_movements_handler(msg: Query<SortedParameters>,
         // Get parameter sort
         if msg.sort == 1 {
             if msg.asc == 0 {
-                v.sort_by_key(|x| (x.id, Reverse(x.id))); 
+                v.sort_by_key(|x| Reverse(x.id)); 
             } else {
                 v.sort_by_key(|x| x.id); 
             }
@@ -230,7 +232,7 @@ pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>,
     db: web::Data<Pool<SqliteConnectionManager>>,) 
 -> impl Future<Item = HttpResponse, Error = Error> {
 
-// Get parameter accountId
+    // Get parameter accountId
     let account_id = msg.accountId.clone(); 
 
     // Prepare query statement
@@ -262,7 +264,7 @@ pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>,
 
         // Get parameter sort
         if msg.asc == 0 {
-            v.sort_by_key(|x| (x.id, Reverse(x.id))); 
+            v.sort_by_key(|x| Reverse(x.id)); 
         } else {
             v.sort_by_key(|x| x.id); 
         }
@@ -280,3 +282,56 @@ pub fn customer_account_movements_top_handler(msg: Query<TopSortedParameters>,
         Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
     })  
 }
+
+// Retrieves all the customer account movements but will display just 
+// the balance of the amounts
+//		accountId 		- number with the account
+// Returns a balance object
+pub fn customer_account_movements_balance_handler(msg: Query<Parameters>, 
+    db: web::Data<Pool<SqliteConnectionManager>>,) 
+-> impl Future<Item = HttpResponse, Error = Error> {
+
+    // Get parameter accountId
+    let account_id = msg.accountId.clone(); 
+
+    // Prepare query statement
+    let mut query = String::from("SELECT m.id, m.movement_date, m.amount, m.concept, m.customer_account_id ");
+	query.push_str(" FROM CUSTOMER_ACCOUNT_MOVEMENTS m ");
+	query.push_str(" WHERE m.CUSTOMER_ACCOUNT_ID = ");
+    query.push_str(&account_id);
+
+    web::block(move || {
+        let conn = db.get().unwrap();                               // get connection
+        let mut stmt = conn.prepare(&query).unwrap();               // Set statement
+
+        let mut rows_iter = from_rows::<CustomerAccountMovement>(stmt.query(NO_PARAMS).unwrap());
+
+        let mut balance = 0f32;
+        let mut ca_id = 0i32;
+
+        loop {
+            match rows_iter.next() {
+                None => break,
+                Some(cam) => {
+                    debug!("CAM: {:?}", cam);
+                    ca_id = cam.customer_account_id;
+                    balance = balance + cam.amount;
+                },
+            };
+        }
+
+        serde_json::to_string(&CustomerAccountBalance{
+            customer_account_id: ca_id,
+            balance: balance,})                                  // return json as string
+    })
+    .then(|res| match res {
+        Ok(account_mvmt) => {
+            Ok(HttpResponse::Ok()
+                .set_header("X-TEST", "value")
+                .set_header(http::header::CONTENT_TYPE, "application/json")
+                .body(account_mvmt)
+            )
+        },
+        Err(_) => Ok(HttpResponse::InternalServerError().json("500 - Internal Server Error")),
+    })  
+}    
